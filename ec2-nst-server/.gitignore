@@ -1,0 +1,3 @@
+vendored/
+api/__pycache__/
+ec2_nst_server/__pycache__/

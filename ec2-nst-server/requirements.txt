@@ -1,0 +1,7 @@
+django
+requests
+boto3
+Pillow==5.3.0
+image
+torch
+torchvision

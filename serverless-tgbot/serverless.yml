@@ -1,0 +1,95 @@
+service: dl-spring-2020-tgbot
+
+custom:
+  bucket: dl-spring-2020-tgbot-s3-bucket
+  gan-styles-bucket: dl-spring-2020-tgbot-s3-gan-styles-bucket
+  nst-queue: dl-spring-2020-tgbot-nst-queue
+  gan-queue: dl-spring-2020-tgbot-gan-queue
+  s3Sync:
+    - bucketName: ${self:custom.gan-styles-bucket}
+      localDir: gan-styles  
+
+provider:
+  name: aws
+  runtime: python3.6
+  stage: dev
+  region: us-east-1
+  environment:
+    AWS_ACCOUNT: ${env:AWS_ACCOUNT}
+    TELEGRAM_TOKEN: ${env:TELEGRAM_TOKEN}
+    EC2_NST_SERVER_IP: ${env:EC2_NST_SERVER_IP}
+    TG_BOT_S3_BUCKET: ${self:custom.bucket}
+    TG_BOT_S3_GAN_STYLES_BUCKET: ${self:custom.gan-styles-bucket}
+    TG_BOT_SQS_NST_NAME: ${self:custom.nst-queue}
+    TG_BOT_SQS_GAN_NAME: ${self:custom.gan-queue}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+        - s3:PutObjectAcl
+        - s3:GetObject
+        - s3:ListBucket
+      Resource:
+        - arn:aws:s3:::${self:custom.bucket}
+        - arn:aws:s3:::${self:custom.bucket}/*
+        - arn:aws:s3:::${self:custom.gan-styles-bucket}
+        - arn:aws:s3:::${self:custom.gan-styles-bucket}/*
+    - Effect: Allow
+      Action:
+        - sqs:SendMessage
+        - sqs:GetQueueUrl
+      Resource:
+        - arn:aws:sqs:${self:provider.region}:${self:provider.environment.AWS_ACCOUNT}:${self:custom.nst-queue}
+        - arn:aws:sqs:${self:provider.region}:${self:provider.environment.AWS_ACCOUNT}:${self:custom.gan-queue}
+
+functions:
+  ApiLambda:
+    handler: api_lambda.handler
+    events:
+      - http:
+          path: tgbot-webhook
+          method: post
+          cors: true
+  SqsNstLambda:
+    handler: sqs_nst_lambda.handler
+    timeout: 600
+    reservedConcurrency: 1
+    events:
+      - sqs:
+          arn: arn:aws:sqs:${self:provider.region}:${self:provider.environment.AWS_ACCOUNT}:${self:custom.nst-queue}
+          batchSize: 1
+  SqsGanLambda:
+    handler: sqs_gan_lambda.handler
+    timeout: 240
+    reservedConcurrency: 1
+    events:
+      - sqs:
+          arn: arn:aws:sqs:${self:provider.region}:${self:provider.environment.AWS_ACCOUNT}:${self:custom.gan-queue}
+          batchSize: 1
+    layers:
+      - arn:aws:lambda:${self:provider.region}:934676248949:layer:pytorchv1-py36:2
+
+# CloudFormation resources
+resources:
+  Resources:
+    DlSpring2020TgBotS3Bucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucket}
+    DlSpring2020TgBotS3GanStylesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.gan-styles-bucket}    
+    DlSpring2020TgBotNstQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.nst-queue}
+        VisibilityTimeout: 600
+    DlSpring2020TgBotGanQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:custom.gan-queue}
+        VisibilityTimeout: 240
+
+plugins:
+  - serverless-s3-sync
